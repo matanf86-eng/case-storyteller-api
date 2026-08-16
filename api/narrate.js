@@ -115,7 +115,7 @@ export default {
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        model: "gpt-5.6-luna",
+                        model: "gpt-5.6",
 
                         instructions: `
 You are writing spoken narration for a product design case study.
