@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto"
+import { list, put } from "@vercel/blob"
+
+const CACHE_VERSION = "v1"
+
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -89,6 +94,28 @@ function getOutputText(data) {
     return ""
 }
 
+function createCacheKey(caseContent, character) {
+    return createHash("sha256")
+        .update(
+            `${CACHE_VERSION}|${character}|${caseContent}`
+        )
+        .digest("hex")
+        .slice(0, 32)
+}
+
+async function findCachedAudio(pathname) {
+    const result = await list({
+        prefix: pathname,
+        limit: 5,
+    })
+
+    return (
+        result.blobs.find(
+            blob => blob.pathname === pathname
+        ) || null
+    )
+}
+
 export default {
     async fetch(request) {
         if (request.method === "OPTIONS") {
@@ -100,7 +127,9 @@ export default {
 
         if (request.method !== "POST") {
             return new Response(
-                JSON.stringify({ error: "Use POST" }),
+                JSON.stringify({
+                    error: "Use POST",
+                }),
                 {
                     status: 405,
                     headers: corsHeaders,
@@ -109,12 +138,16 @@ export default {
         }
 
         try {
-            const { caseContent, character } = await request.json()
+            const {
+                caseContent,
+                character,
+            } = await request.json()
 
             if (!caseContent || !character) {
                 return new Response(
                     JSON.stringify({
-                        error: "caseContent and character are required",
+                        error:
+                            "caseContent and character are required",
                     }),
                     {
                         status: 400,
@@ -126,9 +159,13 @@ export default {
             const characterPrompt =
                 characterInstructions[character]
 
-            const voiceConfig = voiceConfigs[character]
+            const voiceConfig =
+                voiceConfigs[character]
 
-            if (!characterPrompt || !voiceConfig) {
+            if (
+                !characterPrompt ||
+                !voiceConfig
+            ) {
                 return new Response(
                     JSON.stringify({
                         error: "Unknown character",
@@ -140,19 +177,56 @@ export default {
                 )
             }
 
-            // STEP 1 — Create the character's narration
-            const openAIResponse = await fetch(
-                "https://api.openai.com/v1/responses",
-                {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        model: "gpt-5.6",
+            // -----------------------------------
+            // CACHE
+            // -----------------------------------
 
-                        instructions: `
+            const cacheKey =
+                createCacheKey(
+                    caseContent,
+                    character
+                )
+
+            const pathname =
+                `storyteller/${character}/${cacheKey}.mp3`
+
+            const cached =
+                await findCachedAudio(pathname)
+
+            if (cached) {
+                return new Response(
+                    JSON.stringify({
+                        character,
+                        audioDataUrl:
+                            cached.url,
+                        cached: true,
+                    }),
+                    {
+                        status: 200,
+                        headers: corsHeaders,
+                    }
+                )
+            }
+
+            // -----------------------------------
+            // STEP 1 — CREATE NARRATION
+            // -----------------------------------
+
+            const narrationResponse =
+                await fetch(
+                    "https://api.openai.com/v1/responses",
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization:
+                                `Bearer ${process.env.OPENAI_API_KEY}`,
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            model: "gpt-5.6",
+
+                            instructions: `
 You are writing spoken narration for a product design case study.
 
 ${characterPrompt}
@@ -167,20 +241,23 @@ Rules:
 - Start directly with the story.
 `,
 
-                        input: caseContent,
-                    }),
-                }
-            )
+                            input: caseContent,
+                        }),
+                    }
+                )
 
-            const data = await openAIResponse.json()
+            const narrationData =
+                await narrationResponse.json()
 
-            if (!openAIResponse.ok) {
-                console.error(data)
+            if (!narrationResponse.ok) {
+                console.error(
+                    narrationData
+                )
 
                 return new Response(
                     JSON.stringify({
-                        error: "OpenAI narration request failed",
-                        details: data,
+                        error:
+                            "OpenAI narration request failed",
                     }),
                     {
                         status: 500,
@@ -189,40 +266,58 @@ Rules:
                 )
             }
 
-            const narration = getOutputText(data)
+            const narration =
+                getOutputText(
+                    narrationData
+                )
 
             if (!narration) {
-                throw new Error("No narration generated")
+                throw new Error(
+                    "No narration generated"
+                )
             }
 
-            // STEP 2 — Turn the narration into speech
-            const speechResponse = await fetch(
-                "https://api.openai.com/v1/audio/speech",
-                {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        model: "gpt-4o-mini-tts",
-                        voice: voiceConfig.voice,
-                        input: narration,
-                        instructions: voiceConfig.instructions,
-                        response_format: "mp3",
-                    }),
-                }
-            )
+            // -----------------------------------
+            // STEP 2 — CREATE VOICE
+            // -----------------------------------
+
+            const speechResponse =
+                await fetch(
+                    "https://api.openai.com/v1/audio/speech",
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization:
+                                `Bearer ${process.env.OPENAI_API_KEY}`,
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            model:
+                                "gpt-4o-mini-tts",
+                            voice:
+                                voiceConfig.voice,
+                            input: narration,
+                            instructions:
+                                voiceConfig.instructions,
+                            response_format:
+                                "mp3",
+                        }),
+                    }
+                )
 
             if (!speechResponse.ok) {
-                const speechError = await speechResponse.text()
+                const speechError =
+                    await speechResponse.text()
 
-                console.error(speechError)
+                console.error(
+                    speechError
+                )
 
                 return new Response(
                     JSON.stringify({
-                        error: "Speech generation failed",
-                        details: speechError,
+                        error:
+                            "Speech generation failed",
                     }),
                     {
                         status: 500,
@@ -234,15 +329,46 @@ Rules:
             const audioBuffer =
                 await speechResponse.arrayBuffer()
 
-            const audioBase64 =
-                Buffer.from(audioBuffer).toString("base64")
+            // -----------------------------------
+            // STEP 3 — SAVE TO VERCEL BLOB
+            // -----------------------------------
+
+            const blob = await put(
+                pathname,
+                Buffer.from(
+                    audioBuffer
+                ),
+                {
+                    access: "public",
+                    contentType:
+                        "audio/mpeg",
+
+                    addRandomSuffix:
+                        false,
+
+                    allowOverwrite:
+                        true,
+
+                    cacheControlMaxAge:
+                        31536000,
+                }
+            )
+
+            // -----------------------------------
+            // RETURN
+            // -----------------------------------
 
             return new Response(
                 JSON.stringify({
                     narration,
                     character,
+
+                    // Keeping the old property name
+                    // so Framer keeps working
                     audioDataUrl:
-                        `data:audio/mpeg;base64,${audioBase64}`,
+                        blob.url,
+
+                    cached: false,
                 }),
                 {
                     status: 200,
