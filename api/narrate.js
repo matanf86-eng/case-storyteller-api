@@ -20,22 +20,54 @@ Add a subtle dry sense of humor.
 
     grandma: `
 Tell the case study simply, warmly and clearly.
-Avoid product-design jargon and explain complex ideas like a very smart
-person speaking naturally to someone over coffee.
+Avoid product-design jargon.
+Explain complex ideas naturally and conversationally.
 `,
 
     narrator: `
 Tell the case study like a compelling movie narrator.
 Give it a clear setup, tension, turning point and resolution.
-Be cinematic but still professional and believable.
+Be cinematic but still believable.
 `,
 
     cynic: `
 Tell the case study directly, sharply and with dry humor.
 Cut through buzzwords and explain what was actually wrong,
 what changed and why it mattered.
-Do not become rude or dismissive.
+Do not become rude.
 `,
+}
+
+const voiceConfigs = {
+    detective: {
+        voice: "cedar",
+        instructions:
+            "Speak calmly and confidently, with a subtle sense of mystery. Observant, intelligent and controlled.",
+    },
+
+    robot: {
+        voice: "echo",
+        instructions:
+            "Speak precisely and evenly. Slightly mechanical and analytical, with subtle dry humor.",
+    },
+
+    grandma: {
+        voice: "marin",
+        instructions:
+            "Speak warmly, naturally and reassuringly. Sound wise, friendly and conversational.",
+    },
+
+    narrator: {
+        voice: "onyx",
+        instructions:
+            "Speak like a cinematic narrator. Deep, confident and engaging, but never exaggerated.",
+    },
+
+    cynic: {
+        voice: "ash",
+        instructions:
+            "Speak casually and confidently with dry humor. Slightly unimpressed, quick and sharp.",
+    },
 }
 
 function getOutputText(data) {
@@ -94,7 +126,9 @@ export default {
             const characterPrompt =
                 characterInstructions[character]
 
-            if (!characterPrompt) {
+            const voiceConfig = voiceConfigs[character]
+
+            if (!characterPrompt || !voiceConfig) {
                 return new Response(
                     JSON.stringify({
                         error: "Unknown character",
@@ -106,6 +140,7 @@ export default {
                 )
             }
 
+            // STEP 1 — Create the character's narration
             const openAIResponse = await fetch(
                 "https://api.openai.com/v1/responses",
                 {
@@ -144,7 +179,7 @@ Rules:
 
                 return new Response(
                     JSON.stringify({
-                        error: "OpenAI request failed",
+                        error: "OpenAI narration request failed",
                         details: data,
                     }),
                     {
@@ -156,10 +191,58 @@ Rules:
 
             const narration = getOutputText(data)
 
+            if (!narration) {
+                throw new Error("No narration generated")
+            }
+
+            // STEP 2 — Turn the narration into speech
+            const speechResponse = await fetch(
+                "https://api.openai.com/v1/audio/speech",
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        model: "gpt-4o-mini-tts",
+                        voice: voiceConfig.voice,
+                        input: narration,
+                        instructions: voiceConfig.instructions,
+                        response_format: "mp3",
+                    }),
+                }
+            )
+
+            if (!speechResponse.ok) {
+                const speechError = await speechResponse.text()
+
+                console.error(speechError)
+
+                return new Response(
+                    JSON.stringify({
+                        error: "Speech generation failed",
+                        details: speechError,
+                    }),
+                    {
+                        status: 500,
+                        headers: corsHeaders,
+                    }
+                )
+            }
+
+            const audioBuffer =
+                await speechResponse.arrayBuffer()
+
+            const audioBase64 =
+                Buffer.from(audioBuffer).toString("base64")
+
             return new Response(
                 JSON.stringify({
                     narration,
                     character,
+                    audioDataUrl:
+                        `data:audio/mpeg;base64,${audioBase64}`,
                 }),
                 {
                     status: 200,
