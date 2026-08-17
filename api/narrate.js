@@ -1,71 +1,163 @@
 import { createHash } from "node:crypto"
 import { list, put } from "@vercel/blob"
 
-const CACHE_VERSION = "v1"
+// v2 forces new audio generation.
+// The previous cached voices will not be reused.
+const CACHE_VERSION = "v2-distinct-voices"
+
 const MAX_CASE_CHARS = 50000
 
 const characterInstructions = {
     detective: `
-Tell the case study like a smart investigation.
-Build curiosity around the problem, clues, discoveries and solution.
-Sound sharp and engaging, but not cheesy or overly dramatic.
+Tell the case study like an investigation.
+
+Structure the story around:
+1. Something is wrong.
+2. We look for clues.
+3. We discover the real cause.
+4. We solve it.
+
+Create suspense without becoming theatrical.
+Use short observations and occasional pauses.
+The listener should feel like they are uncovering the answer with you.
 `,
 
     robot: `
-Tell the case study analytically and precisely.
-Focus on patterns, logic, evidence and the reasoning behind decisions.
-Add a subtle dry sense of humor.
+Tell the case study like an analytical machine reviewing evidence.
+
+Be extremely structured and factual.
+Focus on patterns, cause and effect, data, logic and decisions.
+
+Use short, efficient sentences.
+Avoid emotional language.
+Occasionally make a very subtle deadpan observation.
+
+The result should feel noticeably different from normal human storytelling.
 `,
 
     grandma: `
-Tell the case study simply, warmly and clearly.
-Avoid product-design jargon.
-Explain complex ideas naturally and conversationally.
+Tell the case study like a wise, warm grandmother explaining it to someone she likes.
+
+Make everything easy to understand.
+Remove product-design jargon.
+Use natural conversational phrases.
+Explain why things mattered to real people.
+
+Be warm, slightly playful and reassuring.
+It should feel like a real conversation, not a presentation.
 `,
 
     narrator: `
-Tell the case study like a compelling movie narrator.
-Give it a clear setup, tension, turning point and resolution.
-Be cinematic but still believable.
+Turn the case study into a cinematic story.
+
+Create a strong setup, tension, turning point and resolution.
+Use dramatic pacing and evocative language,
+while remaining completely faithful to the facts.
+
+Make important moments feel important.
+Use sentences that sound good when spoken aloud.
 `,
 
     cynic: `
-Tell the case study directly, sharply and with dry humor.
-Cut through buzzwords and explain what was actually wrong,
-what changed and why it mattered.
-Do not become rude.
+Tell the case study like a smart, slightly cynical friend who hates buzzwords.
+
+Get to the point quickly.
+Call out what clearly was not working.
+Use dry humor and understated punchlines.
+
+Keep the facts accurate.
+Never become insulting or childish.
+The humor should come from stating the obvious truth everyone else avoided.
 `,
 }
 
 const voiceConfigs = {
     detective: {
-        voice: "cedar",
-        instructions:
-            "Speak calmly and confidently, with a subtle sense of mystery. Observant, intelligent and controlled.",
+        voice: "onyx",
+        speed: 0.9,
+        instructions: `
+You are a noir-style detective telling someone what you discovered.
+
+Speak noticeably slower than normal.
+Use a low, controlled, thoughtful delivery.
+Add meaningful pauses after important observations.
+Keep your emotional range restrained.
+Create quiet suspense rather than dramatic excitement.
+
+Sound observant, intelligent and slightly mysterious.
+Never sound like an advertisement or a podcast host.
+`,
     },
 
     robot: {
         voice: "echo",
-        instructions:
-            "Speak precisely and evenly. Slightly mechanical and analytical, with subtle dry humor.",
+        speed: 1.12,
+        instructions: `
+Speak like a highly intelligent analytical system.
+
+Use a noticeably even, restrained and nearly monotone delivery.
+Keep pitch variation minimal.
+Speak slightly faster than normal.
+Use crisp, clipped phrasing and short pauses.
+
+Do not sound warm or theatrical.
+Do not add enthusiasm.
+Subtle deadpan humor is welcome,
+but deliver it exactly like every other fact.
+`,
     },
 
     grandma: {
         voice: "marin",
-        instructions:
-            "Speak warmly, naturally and reassuringly. Sound wise, friendly and conversational.",
+        speed: 0.91,
+        instructions: `
+Speak like a warm, clever older woman having a relaxed conversation.
+
+Speak gently and slightly slower than normal.
+There should be a smile in the voice.
+Use soft, natural intonation and comfortable pauses.
+Sound affectionate, wise and human.
+
+Do not sound like a narrator.
+Do not sound corporate.
+Imagine explaining something interesting over coffee at the kitchen table.
+`,
     },
 
     narrator: {
-        voice: "onyx",
-        instructions:
-            "Speak like a cinematic narrator. Deep, confident and engaging, but never exaggerated.",
+        voice: "ballad",
+        speed: 0.87,
+        instructions: `
+Perform this like the narrator of a beautifully produced documentary trailer.
+
+Speak slowly and cinematically.
+Use a large expressive range in pitch and intensity.
+Build anticipation.
+Use longer dramatic pauses before turning points.
+Emphasize important words.
+
+Sound elegant and confident.
+Be significantly more theatrical than the other voices,
+but never parody a movie trailer.
+`,
     },
 
     cynic: {
         voice: "ash",
-        instructions:
-            "Speak casually and confidently with dry humor. Slightly unimpressed, quick and sharp.",
+        speed: 1.08,
+        instructions: `
+Speak like a sharp, confident friend who is mildly unimpressed by everything.
+
+Use a casual, dry delivery.
+Speak slightly faster than normal.
+Keep emotional enthusiasm low.
+Use small pauses immediately before dry punchlines.
+Occasionally sound as if you are raising one eyebrow.
+
+Never sound angry.
+Never perform the joke too much.
+The humor works because you sound like you barely care that it is funny.
+`,
     },
 }
 
@@ -102,9 +194,7 @@ function getAllowedOrigins() {
 function isAllowedOrigin(origin) {
     if (!origin) return false
 
-    const allowedOrigins = getAllowedOrigins()
-
-    return allowedOrigins.includes(
+    return getAllowedOrigins().includes(
         normalizeOrigin(origin)
     )
 }
@@ -120,24 +210,16 @@ function corsHeaders(origin) {
 }
 
 function jsonResponse(data, status, origin) {
-    return new Response(
-        JSON.stringify(data),
-        {
-            status,
-            headers: {
-                "Content-Type": "application/json",
-                ...(origin
-                    ? corsHeaders(origin)
-                    : {}),
-            },
-        }
-    )
+    return new Response(JSON.stringify(data), {
+        status,
+        headers: {
+            "Content-Type": "application/json",
+            ...(origin ? corsHeaders(origin) : {}),
+        },
+    })
 }
 
-function createCacheKey(
-    caseContent,
-    character
-) {
+function createCacheKey(caseContent, character) {
     return createHash("sha256")
         .update(
             `${CACHE_VERSION}|${character}|${caseContent}`
@@ -146,9 +228,7 @@ function createCacheKey(
         .slice(0, 32)
 }
 
-async function findCachedAudio(
-    pathname
-) {
+async function findCachedAudio(pathname) {
     const result = await list({
         prefix: pathname,
         limit: 5,
@@ -156,20 +236,18 @@ async function findCachedAudio(
 
     return (
         result.blobs.find(
-            blob =>
-                blob.pathname === pathname
+            blob => blob.pathname === pathname
         ) || null
     )
 }
 
 export default {
     async fetch(request) {
-        const origin =
-            request.headers.get("origin")
+        const origin = request.headers.get("origin")
 
-        // -----------------------------------
-        // CHECK ORIGIN
-        // -----------------------------------
+        // -----------------------------
+        // ORIGIN PROTECTION
+        // -----------------------------
 
         if (!isAllowedOrigin(origin)) {
             console.warn(
@@ -178,71 +256,49 @@ export default {
             )
 
             return jsonResponse(
-                {
-                    error:
-                        "Origin not allowed",
-                },
+                { error: "Origin not allowed" },
                 403,
                 null
             )
         }
 
-        // -----------------------------------
-        // CORS PREFLIGHT
-        // -----------------------------------
+        // -----------------------------
+        // CORS
+        // -----------------------------
 
-        if (
-            request.method ===
-            "OPTIONS"
-        ) {
+        if (request.method === "OPTIONS") {
             return new Response(null, {
                 status: 204,
-                headers:
-                    corsHeaders(origin),
+                headers: corsHeaders(origin),
             })
         }
 
-        // -----------------------------------
-        // METHOD
-        // -----------------------------------
-
-        if (
-            request.method !==
-            "POST"
-        ) {
+        if (request.method !== "POST") {
             return jsonResponse(
-                {
-                    error: "Use POST",
-                },
+                { error: "Use POST" },
                 405,
                 origin
             )
         }
 
         try {
-            const body =
-                await request.json()
+            const body = await request.json()
 
             const {
                 caseContent,
                 character,
             } = body
 
-            // -----------------------------------
-            // INPUT VALIDATION
-            // -----------------------------------
+            // -----------------------------
+            // VALIDATION
+            // -----------------------------
 
             if (
-                typeof caseContent !==
-                    "string" ||
-                typeof character !==
-                    "string"
+                typeof caseContent !== "string" ||
+                typeof character !== "string"
             ) {
                 return jsonResponse(
-                    {
-                        error:
-                            "Invalid request",
-                    },
+                    { error: "Invalid request" },
                     400,
                     origin
                 )
@@ -277,32 +333,25 @@ export default {
             }
 
             const characterPrompt =
-                characterInstructions[
-                    character
-                ]
+                characterInstructions[character]
 
             const voiceConfig =
-                voiceConfigs[
-                    character
-                ]
+                voiceConfigs[character]
 
             if (
                 !characterPrompt ||
                 !voiceConfig
             ) {
                 return jsonResponse(
-                    {
-                        error:
-                            "Unknown character",
-                    },
+                    { error: "Unknown character" },
                     400,
                     origin
                 )
             }
 
-            // -----------------------------------
+            // -----------------------------
             // CACHE
-            // -----------------------------------
+            // -----------------------------
 
             const cacheKey =
                 createCacheKey(
@@ -314,16 +363,13 @@ export default {
                 `storyteller/${character}/${cacheKey}.mp3`
 
             const cached =
-                await findCachedAudio(
-                    pathname
-                )
+                await findCachedAudio(pathname)
 
             if (cached) {
                 return jsonResponse(
                     {
                         character,
-                        audioDataUrl:
-                            cached.url,
+                        audioDataUrl: cached.url,
                         cached: true,
                     },
                     200,
@@ -331,9 +377,9 @@ export default {
                 )
             }
 
-            // -----------------------------------
-            // STEP 1 — CREATE NARRATION
-            // -----------------------------------
+            // -----------------------------
+            // 1. GENERATE CHARACTER SCRIPT
+            // -----------------------------
 
             const narrationResponse =
                 await fetch(
@@ -353,18 +399,32 @@ export default {
                             model: "gpt-5.6",
 
                             instructions: `
-You are writing spoken narration for a product design case study.
+You are creating spoken narration for a product design case study.
+
+The same source case will be narrated by several fictional storytellers.
+It is essential that this storyteller's writing style feels clearly different
+from the others.
+
+CHARACTER DIRECTION:
 
 ${characterPrompt}
 
-Rules:
+FACTUAL RULES:
 - Use only facts found in the supplied case study.
-- Never invent metrics, research findings or outcomes.
-- Write in the same language as the source case.
+- Never invent metrics.
+- Never invent research.
+- Never invent outcomes.
+- Never invent quotes.
+- Preserve the meaning of the original project.
+
+AUDIO WRITING RULES:
 - Write for listening, not reading.
-- Keep it around 120–170 words.
+- Use natural spoken rhythm.
+- Avoid headings and bullet points.
 - Do not introduce yourself.
 - Start directly with the story.
+- Keep it approximately 120–170 words.
+- Write in the same language as the source case.
 `,
 
                             input:
@@ -376,9 +436,7 @@ Rules:
             const narrationData =
                 await narrationResponse.json()
 
-            if (
-                !narrationResponse.ok
-            ) {
+            if (!narrationResponse.ok) {
                 console.error(
                     narrationData
                 )
@@ -404,9 +462,9 @@ Rules:
                 )
             }
 
-            // -----------------------------------
-            // STEP 2 — CREATE VOICE
-            // -----------------------------------
+            // -----------------------------
+            // 2. GENERATE DISTINCT VOICE
+            // -----------------------------
 
             const speechResponse =
                 await fetch(
@@ -435,15 +493,16 @@ Rules:
                             instructions:
                                 voiceConfig.instructions,
 
+                            speed:
+                                voiceConfig.speed,
+
                             response_format:
                                 "mp3",
                         }),
                     }
                 )
 
-            if (
-                !speechResponse.ok
-            ) {
+            if (!speechResponse.ok) {
                 const speechError =
                     await speechResponse.text()
 
@@ -464,9 +523,9 @@ Rules:
             const audioBuffer =
                 await speechResponse.arrayBuffer()
 
-            // -----------------------------------
-            // STEP 3 — SAVE TO VERCEL BLOB
-            // -----------------------------------
+            // -----------------------------
+            // 3. CACHE AUDIO
+            // -----------------------------
 
             const blob =
                 await put(
@@ -477,8 +536,7 @@ Rules:
                     ),
 
                     {
-                        access:
-                            "public",
+                        access: "public",
 
                         contentType:
                             "audio/mpeg",
@@ -493,10 +551,6 @@ Rules:
                             31536000,
                     }
                 )
-
-            // -----------------------------------
-            // RETURN
-            // -----------------------------------
 
             return jsonResponse(
                 {
@@ -513,10 +567,7 @@ Rules:
             console.error(error)
 
             return jsonResponse(
-                {
-                    error:
-                        "Server error",
-                },
+                { error: "Server error" },
                 500,
                 origin
             )
