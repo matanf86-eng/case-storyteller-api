@@ -1,5 +1,5 @@
 # AI Case Study Storyteller for Framer
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmatanf86-eng%2Fcase-storyteller-api&project-name=case-storyteller-api&repository-name=case-storyteller-api&env=%7B%22OPENAI_API_KEY%22%3A%22%22%2C%22ALLOWED_ORIGINS%22%3A%22%22%7D&stores=%5B%7B%22type%22%3A%22blob%22%2C%22access%22%3A%22public%22%7D%5D)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmatanf86-eng%2Fcase-storyteller-api&project-name=case-storyteller-api&repository-name=case-storyteller-api&env=OPENAI_API_KEY%2CALLOWED_ORIGINS&stores=%5B%7B%22type%22%3A%22blob%22%2C%22access%22%3A%22public%22%7D%5D)
 Turn any Framer case study into an AI-narrated story.
 
 Visitors choose a character, press Play, and hear the case study retold in a completely different voice and personality.
