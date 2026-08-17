@@ -43,3 +43,99 @@ You will need to add these Environment Variables:
 ```env
 OPENAI_API_KEY=your_openai_api_key
 ALLOWED_ORIGINS=https://yourwebsite.com
+
+# AI Case Study Storyteller for Framer
+ALLOWED_ORIGINS=https://site-one.com,https://site-two.com
+
+2. Connect Vercel Blob
+
+Create a public Vercel Blob store and connect it to the project.
+
+The Storyteller uses Blob storage to cache generated audio so the same story does not need to be generated again every time.
+
+3. Deploy
+
+After configuring the Environment Variables and Blob store, deploy the project.
+
+Your backend URL will look something like:
+https://your-storyteller.vercel.app
+
+4. Add the Framer component
+
+The public Framer component is included here:
+/framer/CaseStorytellerPublic.tsx
+Add the component to your Framer project.
+
+5. Add your Backend URL
+
+Select the Storyteller component in Framer.
+
+In the properties panel, paste your Vercel URL into:
+Backend URL
+https://your-storyteller.vercel.app
+You do not need to add /api/narrate.
+
+6. Publish
+
+Publish your Framer site.
+
+The component will automatically read the content of the current page and generate the narration when a visitor presses Play.
+
+How it works
+Framer Case Study
+       ↓
+CaseStoryteller
+       ↓
+Vercel API
+       ↓
+OpenAI
+       ↓
+Narration + Voice
+       ↓
+Vercel Blob Cache
+       ↓
+Audio Player
+
+The OpenAI API key stays on the server and is never exposed inside the Framer component.
+
+Customization
+
+Inside Framer you can change:
+
+Default character
+Prompt
+Light / Dark / Auto theme
+AI-generated voice label
+Backend URL
+
+The narrator personalities and voice behavior can be customized inside:
+
+/api/narrate.js
+Tech
+
+Built with:
+
+Framer
+OpenAI
+Vercel Functions
+Vercel Blob
+React / TypeScript
+License
+
+MIT
+
+Built by Matan Feder.
+
+
+
+אחרי זה:
+
+
+**Commit changes…**
+
+
+Commit message:
+
+
+```text
+Add public setup guide
